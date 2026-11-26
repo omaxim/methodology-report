@@ -112,6 +112,7 @@ figure:hover .figc { opacity:1; }
 .note .meta a { color:var(--accent); text-decoration:none; }
 #bar a { color:#fff; text-decoration:underline; }
 .note .meta a:hover, #bar a:hover { text-decoration:underline; }
+.note input.who { width:100%; font:inherit; border:1px solid var(--note-line); border-radius:3px; padding:3px 4px; margin-bottom:4px; }
 </style></head><body><div id="bar"></div><div class="page" data-chapter="auto" data-page="1"><section class="sheet"><header class="running"><span>Data methodology</span><span>Auto</span></header><div class="body"><h1><i data-src="auto.md:3"></i>Auto: plug-in share of new vehicles</h1>
 <p class="lede">How much of each car maker's output will be plug-in vehicles by <span class="fact" data-fact="auto.horizon_year" data-from="output/site/auto.json#headline.path">2030</span>, built mainly from what the makers themselves publish.</p>
 
@@ -400,11 +401,13 @@ figure:hover .figc { opacity:1; }
 <li><i data-src="gas.md:140"></i><strong>The gas remaining is known for part of the fields only.</strong> The rule built on it governs <span class="fact" data-fact="gas.path_reserves_share" data-from="output/gas_detail.csv#mode">24%</span> of output.</li>
 <li><i data-src="gas.md:141"></i><strong>All gas produced is more than gas sold.</strong> Where much of the gas is pumped back into the reservoir, the dataset overstates what reaches a market.</li>
 <li><i data-src="gas.md:142"></i><strong>Fields with no reserves figure decline fast</strong>: by <span class="fact" data-fact="gas.path_type_rate_change" data-from="output/gas_detail.csv#mode">37%</span>, at a rate for the type.</li>
-</ul></div><footer class="running"><span>Gas · page 5 of 5</span><span>Data: OilData at 06afb5d</span></footer></section><aside class="notes"></aside></div><script>window.__COMMENTS__=[];window.__BUILD__={};window.__PUBLIC__={"repo": "omaxim/methodology-report"};</script><script>// Comments on the report, and the on-screen aids (fact origins, page overflow).
+</ul></div><footer class="running"><span>Gas · page 5 of 5</span><span>Data: OilData at 06afb5d</span></footer></section><aside class="notes"></aside></div><script>window.__COMMENTS__=[];window.__BUILD__={};window.__PUBLIC__={"repo": "omaxim/methodology-report", "api": "https://methodology-comments.theia-finance-labs.workers.dev"};</script><script>// Comments on the report, and the on-screen aids (fact origins, page overflow).
 // Select text and press "Comment", or use "Comment" on a figure.
 // Locally (serve.py) comments are saved into comments.yaml next to the report.
-// On the public copy (window.__PUBLIC__.repo) each comment is an issue of that repository:
-// saving one opens GitHub's new-issue form, filled in, and the page reads the issues back.
+// On the public copy (window.__PUBLIC__) comments are kept by a small comment store
+// (worker/worker.js, at __PUBLIC__.api): the reader gives a name and the comment is posted
+// from the page. Without `api` each comment is an issue of __PUBLIC__.repo instead: saving one
+// opens GitHub's new-issue form, filled in, and the page reads the issues back.
 (() => {
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -412,6 +415,18 @@ figure:hover .figc { opacity:1; }
   const canSave = PUB ? true : location.protocol.startsWith("http");
   const GH = PUB ? `https://github.com/${PUB.repo}` : "";
   const API = PUB ? `https://api.github.com/repos/${PUB.repo}` : "";
+  const STORE = PUB?.api || "";
+  const myName = () => { try { return localStorage.getItem("report-name") || ""; } catch { return ""; } };
+  const keepName = (n) => { try { localStorage.setItem("report-name", n); } catch {} };
+  async function store(method, path, body) {
+    const r = await fetch(STORE + path, {
+      method, cache: "no-store",
+      ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(out.error || `the comment store answered ${r.status}`);
+    return out.comments.map((c) => ({ ...c, author: c.name }));
+  }
   const META = /<!-- report-comment (\{[\s\S]*?\}) -->/;
   const chapterTitle = (id) => $(`.page[data-chapter="${id}"] header.running span:last-child`)?.textContent || id;
 
@@ -495,6 +510,18 @@ figure:hover .figc { opacity:1; }
 
   // ---- saving
   async function send(op) {
+    if (STORE) {
+      if (op.op !== "upsert") return render();
+      const { id, created, status, ...fields } = op.comment;
+      try {
+        comments = await store("POST", "/comments", fields);
+        setStatus("Comment posted", "ok");
+      } catch (err) {
+        comments.push({ ...op.comment, _draft: true });     // keep what was typed
+        setStatus("Not posted: " + err.message, "warn");
+      }
+      return render();
+    }
     if (PUB) {
       if (op.op === "upsert" && !op.comment.number) {
         window.open(issueUrl(op.comment), "_blank", "noopener");
@@ -517,7 +544,7 @@ figure:hover .figc { opacity:1; }
     if (!canSave) return;
     if (PUB) {
       try {
-        comments = [...(await loadIssues()), ...comments.filter((c) => c._draft)];
+        comments = [...(STORE ? await store("GET", "/comments") : await loadIssues()), ...comments.filter((c) => c._draft)];
       } catch (err) {
         setStatus("Comments could not be read: " + err.message, "warn");
       }
@@ -598,17 +625,22 @@ figure:hover .figc { opacity:1; }
     const n = document.createElement("div");
     n.className = "note" + (c.status === "done" ? " done" : "") + (c.id === activeId ? " active" : "");
     if (c._draft) {
-      n.innerHTML = `${c.quote ? `<q>${esc(c.quote)}</q>` : ""}<textarea placeholder="Your comment. Cmd+Enter saves."></textarea>
-        <div class="meta"><span></span><button data-a="save">${PUB ? "Post on GitHub" : "Save"}</button><button data-a="cancel">Cancel</button></div>`;
+      n.innerHTML = `${c.quote ? `<q>${esc(c.quote)}</q>` : ""}${STORE ? `<input class="who" placeholder="Your name" maxlength="60">` : ""}<textarea placeholder="Your comment. Cmd+Enter ${STORE ? "posts" : "saves"}."></textarea>
+        <div class="meta"><span>${STORE ? "Shown publicly, with your name" : ""}</span><button data-a="save">${STORE ? "Post" : PUB ? "Post on GitHub" : "Save"}</button><button data-a="cancel">Cancel</button></div>`;
       const ta = $("textarea", n);
+      const who = $("input.who", n);
       ta.value = c.text || "";
-      setTimeout(() => ta.focus());
+      if (who) who.value = c.name || myName();
+      setTimeout(() => (who && !who.value ? who : ta).focus());
       const save = () => {
         const text = ta.value.trim();
-        if (!text) return;
+        const name = who ? who.value.trim() : "";
+        if (who && !name) return who.focus();
+        if (!text) return ta.focus();
+        if (who) keepName(name);
         const { _draft, ...clean } = c;
         comments = comments.filter((x) => x !== c);
-        send({ op: "upsert", comment: { ...clean, text } });
+        send({ op: "upsert", comment: { ...clean, text, ...(who ? { name } : {}) } });
       };
       ta.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
@@ -624,7 +656,7 @@ figure:hover .figc { opacity:1; }
         <div class="txt">${esc(c.text)}</div>
         ${(c.replies || []).map((r) => `<div class="reply"><b>${esc(r.who)}:</b> ${esc(r.text)}</div>`).join("")}
         <div class="meta"><span>${esc(c.author)} · ${esc((c.created || "").slice(0, 10))}</span>
-          <a href="${esc(c.url)}" target="_blank" rel="noopener">#${c.number}: reply or resolve on GitHub</a></div>`;
+          ${STORE ? "" : `<a href="${esc(c.url)}" target="_blank" rel="noopener">#${c.number}: reply or resolve on GitHub</a>`}</div>`;
       n.onclick = (e) => {
         if (e.target.closest("a")) return;
         activeId = activeId === c.id ? null : c.id;
@@ -666,8 +698,8 @@ figure:hover .figc { opacity:1; }
       (over ? `<span class="warn">${over} page${over === 1 ? " is" : "s are"} too long</span>` : "") +
       (canSave ? "" : `<span class="warn">Read-only: open through serve.py to comment</span>`) +
       (status ? `<span class="${statusKind}">${esc(status)}</span>` : "") +
-      (PUB ? `<a href="${GH}/issues" target="_blank" rel="noopener">All comments on GitHub</a>` : "") +
-      `<span style="opacity:.6">Select text to comment${PUB ? " (needs a GitHub account)" : ""} · hover a number for its source</span>`;
+      (PUB && !STORE ? `<a href="${GH}/issues" target="_blank" rel="noopener">All comments on GitHub</a>` : "") +
+      `<span style="opacity:.6">Select text to comment${PUB && !STORE ? " (needs a GitHub account)" : ""} · hover a number for its source</span>`;
     const t = $("#tdone");
     if (t) t.onclick = () => { showDone = !showDone; render(); };
   }
