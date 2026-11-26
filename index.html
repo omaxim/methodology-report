@@ -580,14 +580,19 @@ figure:hover .figc { opacity:1; }
   function anchorOf(c) {
     const page = $(`.page[data-chapter="${c.chapter}"][data-page="${c.page}"]`);
     if (c.fig) return $(`[data-fig="${c.fig}"]`) || page;
-    if (c.src) {
-      const el = $(`[data-src="${c.src}"]`);
-      if (el) return el;
-    }
-    if (page && c.quote) {
-      const hit = $$("p, li, h1, h2, figcaption", page).find((el) => el.textContent.includes(c.quote));
+    // The source line names a block, but a list shares one line between its items and the text
+    // may have moved since: the block that actually holds the quoted words wins, on the
+    // comment's page first and then anywhere in its chapter.
+    const el = c.src ? $(`[data-src="${c.src}"]`) : null;
+    if (c.quote) {
+      const holds = (x) => x.textContent.includes(c.quote);
+      if (el && !el.matches("ul, ol") && holds(el)) return el;
+      const blocks = "p, li, h1, h2, figcaption, td";
+      const hit = (page ? $$(blocks, page).find(holds) : null)
+        || $$(`.page[data-chapter="${c.chapter}"] .body`).flatMap((b) => $$(blocks, b)).find(holds);
       if (hit) return hit;
     }
+    if (el) return el;
     return page ? $(".body", page) : null;
   }
   function quoteRange(el, quote) {
