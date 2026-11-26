@@ -109,7 +109,8 @@ figure:hover .figc { opacity:1; }
 }
 
 /* the public copy: links in notes and in the bar */
-.note .meta a, #bar a { color:var(--accent); text-decoration:none; }
+.note .meta a { color:var(--accent); text-decoration:none; }
+#bar a { color:#fff; text-decoration:underline; }
 .note .meta a:hover, #bar a:hover { text-decoration:underline; }
 </style></head><body><div id="bar"></div><div class="page" data-chapter="auto" data-page="1"><section class="sheet"><header class="running"><span>Data methodology</span><span>Auto</span></header><div class="body"><h1><i data-src="auto.md:3"></i>Auto: plug-in share of new vehicles</h1>
 <p class="lede">How much of each car maker's output will be plug-in vehicles by <span class="fact" data-fact="auto.horizon_year" data-from="output/site/auto.json#headline.path">2030</span>, built mainly from what the makers themselves publish.</p>
@@ -440,7 +441,8 @@ figure:hover .figc { opacity:1; }
   }
   async function loadIssues() {
     const get = async (path) => {
-      const r = await fetch(API + path, { headers: { Accept: "application/vnd.github+json" } });
+      // GitHub lets a browser reuse an answer for a minute; a comment just posted must show on reload
+      const r = await fetch(`${API}${path}&_=${Date.now()}`, { cache: "no-store", headers: { Accept: "application/vnd.github+json" } });
       if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
       return r.json();
     };
